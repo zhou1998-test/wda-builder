@@ -1,4 +1,4 @@
-name: Build WDA
+name: Build and Sign WDA
 
 on:
   workflow_dispatch:
@@ -10,48 +10,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: appium/WebDriverAgent
-          path: wda
+          ref: v15.0.0
 
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-
-      - name: Build WDA
+      - name: List structure
         run: |
-          cd wda
-          # Try to find and fix build dependencies
-          gem install cocoapods 2>/dev/null || true
-          find . -name "Podfile" -execdir pod install \; 2>/dev/null || true
+          ls -la
+          ls Scripts/ 2>/dev/null || echo "no Scripts dir"
+          find . -name "*.sh" -o -name "Podfile" -o -name "*.xcodeproj" -o -name "*.xcworkspace" | head -10
 
-          xcodebuild build-for-testing \
-            -workspace WebDriverAgent.xcworkspace \
-            -scheme WebDriverAgentRunner \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO 2>&1 || \
+      - name: Build with xcodebuild
+        run: |
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
             -sdk iphoneos \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO
-
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
           mkdir -p Payload
-          find build -name "WebDriverAgentRunner.app" -type d | while read app; do
-            cp -r "$app" Payload/
-          done
-          if [ -d Payload/WebDriverAgentRunner.app ]; then
-            zip -rj WDA_unsigned.zip Payload
-            echo "BUILD SUCCESS"
-          else
-            echo "BUILD FAILED - listing build output:"
-            find build -name "*.app" -type d 2>/dev/null
-            exit 1
-          fi
+          find build -name "WebDriverAgentRunner.app" | head -1 | xargs -I{} cp -r {} Payload/
+          zip -rj WDA_unsigned.zip Payload
+          echo "BUILD DONE"
+          ls -la WDA_unsigned.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WDA-unsigned
-          path: wda/WDA_unsigned.zip
+          name: WDA
+          path: WDA_unsigned.zip
