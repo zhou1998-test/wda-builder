@@ -19,7 +19,8 @@ jobs:
       - name: Build WDA
         run: |
           cd wda
-          ./Scripts/bootstrap.sh -d
+          ls Scripts/ || ls scripts/ || ls *.sh || echo "No bootstrap found"
+          find . -name "bootstrap*" -type f 2>/dev/null || echo "searching..."
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
@@ -29,8 +30,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
           mkdir Payload
           cp -r build/Build/Products/Release-iphoneos/WebDriverAgentRunner.app Payload/
-          cd Payload && zip -r ../WDA_unsigned.zip * && cd ..
-          ls -la WDA_unsigned.zip
+          zip -rj WDA_unsigned.zip Payload
 
       - uses: actions/upload-artifact@v4
         with:
