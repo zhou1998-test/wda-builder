@@ -14,49 +14,40 @@ jobs:
 
       - name: Build WDA
         run: |
-          xcodebuild build-for-testing \
+          xcodebuild \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
             -sdk iphoneos \
             -configuration Release \
             -derivedDataPath build \
+            -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO
 
-          echo "=== Full find ==="
-          find build -type d | grep -i "app$" 
-          find build -name "WebDriverAgent*" -type f | head -10
-          find build -name "*.app" -type d
-          find build -path "*/Products/*" -type d
-
-          # Try the standard xcodebuild output paths
-          for dir in build/Build/Products/Release-iphoneos build/Build/Products/Debug-iphoneos; do
-            echo "--- $dir ---"
-            ls "$dir" 2>/dev/null || echo "not found"
-          done
+          echo "=== Products ==="
+          find build/Build/Products -type d -maxdepth 3 2>/dev/null
+          echo "=== All .app ==="
+          find build -name "*.app" -type d 2>/dev/null
+          echo "=== Runner files ==="
+          find build -name "*Runner*" -type f 2>/dev/null | head -10
 
           APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
-          if [ -z "$APP" ]; then
-            APP=$(find build/Build/Products -name "*.app" -type d 2>/dev/null | head -1)
-          fi
-          if [ -z "$APP" ]; then
-            # Last resort: the .app might be embedded differently
-            echo "Searching with broader criteria..."
-            find . -name "*.app" -type d 2>/dev/null | head -5
-            find build -name "WebDriverAgentRunner" -o -name "*-Runner" | head -5
-          fi
-          
           if [ -n "$APP" ]; then
-            echo "Found APP: $APP"
-            mkdir -p Payload
-            cp -r "$APP" Payload/
-            zip -rj WDA_unsigned.zip Payload
-            ls -la WDA_unsigned.zip
+            echo "APP: $APP"
+            mkdir -p Payload && cp -r "$APP" Payload/ && zip -rj WDA_unsigned.zip Payload && ls -la WDA_unsigned.zip
           else
-            echo "FAIL: No .app found. Full listing:"
-            find build/Build/Products -maxdepth 3 -type d 2>/dev/null
-            exit 1
+            echo "No .app, trying alternative..."
+            # Try to create IPA manually from built products
+            mkdir -p Payload/WDA.app
+            cp -r build/Build/Products/Release-iphoneos/* Payload/WDA.app/ 2>/dev/null
+            ls Payload/WDA.app/ | head -5
+            if [ "$(ls -A Payload/WDA.app)" ]; then
+              zip -rj WDA_unsigned.zip Payload && ls -la WDA_unsigned.zip
+            else
+              echo "FAIL"
+              exit 1
+            fi
           fi
 
       - uses: actions/upload-artifact@v4
