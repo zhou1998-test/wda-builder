@@ -1,12 +1,7 @@
-name: Build and Sign WDA
+name: Build Unsigned WDA
 
 on:
   workflow_dispatch:
-    inputs:
-      apple_id:
-        required: true
-      apple_password:
-        required: true
 
 jobs:
   build:
@@ -17,10 +12,7 @@ jobs:
           repository: appium/WebDriverAgent
           ref: v15.0.0
 
-      - name: Build WDA
-        env:
-          APPLE_ID: ${{ github.event.inputs.apple_id }}
-          APPLE_PASSWORD: ${{ github.event.inputs.apple_password }}
+      - name: Build WDA (no signing)
         run: |
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
@@ -28,28 +20,26 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_STYLE=Automatic \
-            PRODUCT_BUNDLE_IDENTIFIER="com.zhou1998.wda" \
-            -allowProvisioningUpdates \
-            DEVELOPMENT_TEAM=""
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
 
-          echo "=== Build output ==="
+          echo "=== Looking for .app ==="
           find build -name "*.app" -type d
-          find build -name "WebDriverAgent*" -type d | head -10
-
-          mkdir -p Payload
           APP=$(find build -name "*.app" -type d | head -1)
-          if [ -n "$APP" ]; then
-            cp -r "$APP" Payload/
-            zip -rj WDA_signed.ipa Payload
-            echo "IPA created:"
-            ls -la WDA_signed.ipa
-          else
-            echo "No .app found!"
+          if [ -z "$APP" ]; then
+            echo "Searching differently..."
+            find build -name "WebDriverAgent*" | head -20
             exit 1
           fi
+          echo "Found: $APP"
+          mkdir -p Payload
+          cp -r "$APP" Payload/
+          zip -rj WDA_unsigned.zip Payload
+          ls -la WDA_unsigned.zip
+          echo "SUCCESS"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WDA-signed
-          path: WDA_signed.ipa
+          name: WDA-unsigned
+          path: WDA_unsigned.zip
