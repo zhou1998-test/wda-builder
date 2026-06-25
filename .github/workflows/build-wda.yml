@@ -1,7 +1,12 @@
-name: Build Unsigned WDA
+name: Build Sign WDA
 
 on:
   workflow_dispatch:
+    inputs:
+      apple_id:
+        required: true
+      apple_password:
+        required: true
 
 jobs:
   build:
@@ -12,45 +17,70 @@ jobs:
           repository: appium/WebDriverAgent
           ref: v15.0.0
 
-      - name: Build WDA
+      - name: Build and Sign with Apple ID
+        env:
+          APPLE_ID: ${{ github.event.inputs.apple_id }}
+          APPLE_PASSWORD: ${{ github.event.inputs.apple_password }}
         run: |
-          xcodebuild \
-            -project WebDriverAgent.xcodeproj \
-            -scheme WebDriverAgentRunner \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath build \
-            -destination "generic/platform=iOS" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO
+          # Add Apple ID to Xcode's credential store
+          xcrun notarytool store-credentials "WDA-Account" \
+            --apple-id "$APPLE_ID" \
+            --team-id "" \
+            --password "$APPLE_PASSWORD" 2>/dev/null || true
 
+          # Use fastlane to handle signing
+          gem install fastlane -N 2>/dev/null || true
+          
+          # Create a basic Fastfile
+          cat > Fastfile << 'FASTEOF'
+          lane :build do
+            automatic_code_signing(
+              path: "WebDriverAgent.xcodeproj",
+              use_automatic_signing: true,
+              team_id: nil
+            )
+            build_app(
+              project: "WebDriverAgent.xcodeproj",
+              scheme: "WebDriverAgentRunner",
+              sdk: "iphoneos",
+              configuration: "Release",
+              output_directory: "output",
+              output_name: "WDA.ipa",
+              skip_package_ipa: true,
+              export_method: "development"
+            )
+          end
+          FASTEOF
+          
+          fastlane build 2>&1 || {
+            echo "Fastlane failed, trying xcodebuild directly..."
+            xcodebuild \
+              -project WebDriverAgent.xcodeproj \
+              -scheme WebDriverAgentRunner \
+              -sdk iphoneos \
+              -configuration Release \
+              -derivedDataPath build \
+              -destination "generic/platform=iOS" \
+              CODE_SIGN_STYLE=Automatic \
+              -allowProvisioningUpdates 2>&1
+          }
+
+          # Find the app
           echo "=== Products ==="
-          find build/Build/Products -type d -maxdepth 3 2>/dev/null
-          echo "=== All .app ==="
-          find build -name "*.app" -type d 2>/dev/null
-          echo "=== Runner files ==="
-          find build -name "*Runner*" -type f 2>/dev/null | head -10
+          find . -name "*.app" -type d 2>/dev/null | head -5
+          find build -name "*.app" -type d 2>/dev/null | head -5
+          find output -name "*.app" -type d 2>/dev/null | head -5
 
-          APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
+          APP=$(find . build output -name "*.app" -type d 2>/dev/null | head -1)
           if [ -n "$APP" ]; then
-            echo "APP: $APP"
-            mkdir -p Payload && cp -r "$APP" Payload/ && zip -rj WDA_unsigned.zip Payload && ls -la WDA_unsigned.zip
+            mkdir -p Payload && cp -r "$APP" Payload/ && zip -rj WDA.ipa Payload
+            echo "SUCCESS: $(ls -la WDA.ipa)"
           else
-            echo "No .app, trying alternative..."
-            # Try to create IPA manually from built products
-            mkdir -p Payload/WDA.app
-            cp -r build/Build/Products/Release-iphoneos/* Payload/WDA.app/ 2>/dev/null
-            ls Payload/WDA.app/ | head -5
-            if [ "$(ls -A Payload/WDA.app)" ]; then
-              zip -rj WDA_unsigned.zip Payload && ls -la WDA_unsigned.zip
-            else
-              echo "FAIL"
-              exit 1
-            fi
+            echo "FAIL"
+            exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WDA-unsigned
-          path: WDA_unsigned.zip
+          name: WDA
+          path: WDA.ipa
