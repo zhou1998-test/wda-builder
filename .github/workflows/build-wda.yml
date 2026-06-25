@@ -19,8 +19,17 @@ jobs:
       - name: Build WDA
         run: |
           cd wda
-          ls Scripts/ || ls scripts/ || ls *.sh || echo "No bootstrap found"
-          find . -name "bootstrap*" -type f 2>/dev/null || echo "searching..."
+          # Try to find and fix build dependencies
+          gem install cocoapods 2>/dev/null || true
+          find . -name "Podfile" -execdir pod install \; 2>/dev/null || true
+
+          xcodebuild build-for-testing \
+            -workspace WebDriverAgent.xcworkspace \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO 2>&1 || \
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
@@ -28,9 +37,19 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
-          mkdir Payload
-          cp -r build/Build/Products/Release-iphoneos/WebDriverAgentRunner.app Payload/
-          zip -rj WDA_unsigned.zip Payload
+
+          mkdir -p Payload
+          find build -name "WebDriverAgentRunner.app" -type d | while read app; do
+            cp -r "$app" Payload/
+          done
+          if [ -d Payload/WebDriverAgentRunner.app ]; then
+            zip -rj WDA_unsigned.zip Payload
+            echo "BUILD SUCCESS"
+          else
+            echo "BUILD FAILED - listing build output:"
+            find build -name "*.app" -type d 2>/dev/null
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
