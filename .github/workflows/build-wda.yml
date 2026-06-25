@@ -12,7 +12,7 @@ jobs:
           repository: appium/WebDriverAgent
           ref: v15.0.0
 
-      - name: Build WDA (no signing)
+      - name: Build WDA
         run: |
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
@@ -24,20 +24,40 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO
 
-          echo "=== Looking for .app ==="
+          echo "=== Full find ==="
+          find build -type d | grep -i "app$" 
+          find build -name "WebDriverAgent*" -type f | head -10
           find build -name "*.app" -type d
-          APP=$(find build -name "*.app" -type d | head -1)
+          find build -path "*/Products/*" -type d
+
+          # Try the standard xcodebuild output paths
+          for dir in build/Build/Products/Release-iphoneos build/Build/Products/Debug-iphoneos; do
+            echo "--- $dir ---"
+            ls "$dir" 2>/dev/null || echo "not found"
+          done
+
+          APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
           if [ -z "$APP" ]; then
-            echo "Searching differently..."
-            find build -name "WebDriverAgent*" | head -20
+            APP=$(find build/Build/Products -name "*.app" -type d 2>/dev/null | head -1)
+          fi
+          if [ -z "$APP" ]; then
+            # Last resort: the .app might be embedded differently
+            echo "Searching with broader criteria..."
+            find . -name "*.app" -type d 2>/dev/null | head -5
+            find build -name "WebDriverAgentRunner" -o -name "*-Runner" | head -5
+          fi
+          
+          if [ -n "$APP" ]; then
+            echo "Found APP: $APP"
+            mkdir -p Payload
+            cp -r "$APP" Payload/
+            zip -rj WDA_unsigned.zip Payload
+            ls -la WDA_unsigned.zip
+          else
+            echo "FAIL: No .app found. Full listing:"
+            find build/Build/Products -maxdepth 3 -type d 2>/dev/null
             exit 1
           fi
-          echo "Found: $APP"
-          mkdir -p Payload
-          cp -r "$APP" Payload/
-          zip -rj WDA_unsigned.zip Payload
-          ls -la WDA_unsigned.zip
-          echo "SUCCESS"
 
       - uses: actions/upload-artifact@v4
         with:
