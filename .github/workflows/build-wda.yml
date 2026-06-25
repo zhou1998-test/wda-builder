@@ -1,0 +1,38 @@
+name: Build WDA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout WDA
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          path: wda
+
+      - name: Build WDA
+        run: |
+          cd wda
+          ./Scripts/bootstrap.sh
+          xcodebuild \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            CODE_SIGN_STYLE="Automatic" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.zhou1998.wda" \
+            build
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/WebDriverAgentRunner.app Payload/
+          zip -r WDA.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA
+          path: wda/WDA.ipa
