@@ -1,4 +1,4 @@
-name: Build Sign WDA
+name: Build and Sign WDA
 
 on:
   workflow_dispatch:
@@ -17,31 +17,11 @@ jobs:
           repository: appium/WebDriverAgent
           ref: v15.0.0
 
-      - name: Build and Sign
+      - name: Build WDA
         env:
           APPLE_ID: ${{ github.event.inputs.apple_id }}
           APPLE_PASSWORD: ${{ github.event.inputs.apple_password }}
         run: |
-          BUNDLE_ID="com.zhou1998.wda.runner"
-          
-          # Add Apple ID to keychain
-          security add-generic-password -a "$APPLE_ID" -s "Xcode-Altool" -w "$APPLE_PASSWORD" -T /usr/bin/security
-          
-          # Create export plist for adhoc signing
-          cat > export.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>development</string>
-              <key>teamID</key>
-              <string></string>
-          </dict>
-          </plist>
-          EOF
-          
-          # Build
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
@@ -49,24 +29,27 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             CODE_SIGN_STYLE=Automatic \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.zhou1998.wda" \
             -allowProvisioningUpdates \
-            DEVELOPMENT_TEAM="" 2>&1 | tail -30
+            DEVELOPMENT_TEAM=""
 
-          # Package
+          echo "=== Build output ==="
+          find build -name "*.app" -type d
+          find build -name "WebDriverAgent*" -type d | head -10
+
           mkdir -p Payload
-          find build -name "WebDriverAgentRunner.app" -type d | head -1 | xargs -I{} cp -r {} Payload/
-          if [ -d Payload/WebDriverAgentRunner.app ]; then
-            zip -rj WDA.ipa Payload
-            echo "SUCCESS"
-            ls -la WDA.ipa
+          APP=$(find build -name "*.app" -type d | head -1)
+          if [ -n "$APP" ]; then
+            cp -r "$APP" Payload/
+            zip -rj WDA_signed.ipa Payload
+            echo "IPA created:"
+            ls -la WDA_signed.ipa
           else
-            echo "No app found, checking build output:"
-            find build -name "*.app" -type d
+            echo "No .app found!"
             exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: WDA-signed
-          path: WDA.ipa
+          path: WDA_signed.ipa
